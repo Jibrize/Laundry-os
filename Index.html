@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Laundry OS</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0b1220;color:#eef2f7}
+header{position:sticky;top:0;background:#0b1220;border-bottom:1px solid #243047;padding:14px 16px;z-index:5}
+header b{font-size:18px}main{max-width:650px;margin:auto;padding:14px 14px 90px}
+.card{background:#121b2d;border:1px solid #243047;border-radius:16px;padding:14px;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stat{padding:12px;background:#0e1728;border-radius:12px;text-align:center}.stat b{display:block;font-size:24px}.muted{color:#8e9bb0;font-size:13px}
+.tabs{display:flex;gap:7px;margin-bottom:12px}.tabs button,.bottom button{border:0;background:#111c30;color:#9aa7bb;border-radius:11px;padding:11px;font:inherit}.tabs button.active,.bottom button.active{background:#24375b;color:white}
+.order{border-left:5px solid #3b82f6;padding:13px;background:#121b2d;border-radius:12px;margin-bottom:9px}.order.ready{border-left-color:#22c55e}.order.wash{border-left-color:#eab308}
+.row{display:flex;gap:8px;align-items:center}.grow{flex:1}button{cursor:pointer}button.primary{background:#3b82f6;color:white;border:0;border-radius:11px;padding:12px 14px;font-weight:700}button.ok{background:#22c55e;color:#062b14;border:0;border-radius:11px;padding:12px 14px;font-weight:700}button.dark{background:#1b2942;color:white;border:1px solid #2a3b59;border-radius:11px;padding:12px 14px}
+.actions{display:flex;gap:8px;margin-top:10px}.actions button{flex:1}
+input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #293750;background:#0a1220;color:white;font:inherit;margin:5px 0 10px}
+label{font-size:12px;color:#9aa7bb}.bottom{position:fixed;bottom:0;left:0;right:0;background:#0d1524;border-top:1px solid #243047;display:flex;gap:6px;padding:8px;z-index:5}.bottom button{flex:1}
+.empty{text-align:center;padding:40px 10px;color:#7f8da3}.badge{font-size:11px;text-transform:uppercase;color:#a9b6c9}
+.toast{position:fixed;bottom:75px;left:50%;transform:translateX(-50%);background:#263958;padding:12px 17px;border-radius:10px;display:none;z-index:10}
+.toast.show{display:block}
+</style>
+</head>
+<body>
+<header><b>🧺 Laundry OS</b></header>
+<main id="app"></main>
+<nav class="bottom">
+<button id="todayBtn" onclick="view='today';render()">☀️<br>Today</button>
+<button id="clientsBtn" onclick="view='clients';render()">👥<br>Clients</button>
+<button id="addBtn" onclick="newOrder()">＋<br>New</button>
+<button id="settingsBtn" onclick="view='settings';render()">⚙️<br>More</button>
+</nav>
+<div id="toast" class="toast"></div>
+
+<script>
+const KEY="laundry_os_v1";
+let data=JSON.parse(localStorage.getItem(KEY)||'{"clients":[],"orders":[]}');
+let view="today",tab="pickups";
+
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const save=()=>localStorage.setItem(KEY,JSON.stringify(data));
+const toast=m=>{let x=document.getElementById("toast");x.textContent=m;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),1800)};
+const money=n=>"KES "+Number(n||0).toLocaleString();
+const serviceName=s=>({wash_fold:"Wash + Fold",wash_iron:"Wash + Iron",iron_only:"Iron Only"}[s]||s);
+
+function render(){
+document.querySelectorAll(".bottom button").forEach(x=>x.classList.remove("active"));
+document.getElementById(view==="today"?"todayBtn":view==="clients"?"clientsBtn":view==="settings"?"settingsBtn":"addBtn").classList.add("active");
+if(view==="today")today(); if(view==="clients")clients(); if(view==="settings")settings();
+}
+
+function today(){
+let pickups=data.orders.filter(o=>o.status==="pickup_requested");
+let wash=data.orders.filter(o=>o.status==="picked_up");
+let ready=data.orders.filter(o=>o.status==="ready");
+let list=tab==="pickups"?pickups:tab==="wash"?wash:ready;
+document.getElementById("app").innerHTML=`
+<div class="grid">
+<div class="stat"><b>${pickups.length}</b><span class="muted">Pickups</span></div>
+<div class="stat"><b>${wash.length}</b><span class="muted">In wash</span></div>
+<div class="stat"><b>${ready.length}</b><span class="muted">Ready</span></div>
+</div>
+<div style="height:12px"></div>
+<div class="tabs">
+<button class="${tab==="pickups"?"active":""}" onclick="tab='pickups';render()">Pickups</button>
+<button class="${tab==="wash"?"active":""}" onclick="tab='wash';render()">In wash</button>
+<button class="${tab==="ready"?"active":""}" onclick="tab='ready';render()">Ready</button>
+</div>
+${list.length?list.map(orderCard).join(""):`<div class="empty">🧺<br><br>Nothing here.</div>`}`;
+}
+
+function orderCard(o){
+let c=data.clients.find(x=>x.id===o.clientId)||{};
+return `<div class="order ${o.status==="ready"?"ready":o.status==="picked_up"?"wash":""}">
+<div class="row"><div class="grow"><b>${esc(c.name||"Unknown")}</b><div class="muted">${esc(o.code)} · ${serviceName(o.service)}</div></div>
+<span class="badge">${o.status.replaceAll("_"," ")}</span></div>
+<div class="muted" style="margin-top:8px">📍 ${esc(c.landmark||"No landmark")} · ${o.kg||0} kg · ${money(o.total)}</div>
+<div class="actions">
+${o.status==="pickup_requested"?`<button class="primary" onclick="pickup('${o.id}')">✓ Pick up</button>`:""}
+${o.status==="picked_up"?`<button class="ok" onclick="ready('${o.id}')">Mark ready</button>`:""}
+${o.status==="ready"?`<button class="ok" onclick="deliver('${o.id}')">✓ Deliver</button>`:""}
+</div></div>`;
+}
+
+function pickup(id){
+let o=data.orders.find(x=>x.id===id),kg=prompt("Weight in kg","5");
+if(kg===null)return;kg=Number(kg);if(!kg||kg<=0)return toast("Enter a valid weight");
+o.kg=kg;o.total=kg*o.unitPrice;o.balance=o.total-o.paid;o.status="picked_up";save();toast("Picked up");render();
+}
+function ready(id){let o=data.orders.find(x=>x.id===id);o.status="ready";save();toast("Order ready");render()}
+function deliver(id){
+let o=data.orders.find(x=>x.id===id),p=prompt("Payment received",String(o.balance));
+if(p===null)return;p=Number(p)||0;o.paid+=p;o.balance=o.total-o.paid;
+if(o.balance<=0)o.status="delivered";save();toast(o.balance<=0?"Delivered and settled":"Delivered");render();
+}
+
+function clients(){
+document.getElementById("app").innerHTML=`
+<div class="card"><button class="primary" style="width:100%" onclick="newClient()">＋ Add client</button></div>
+${data.clients.length?data.clients.map(c=>`<div class="card"><b>${esc(c.name)}</b><div class="muted">${esc(c.phone)} · ${esc(c.landmark)}</div></div>`).join(""):`<div class="empty">No clients yet.</div>`}`;
+}
+function newClient(){
+let name=prompt("Client name");if(!name)return;
+let phone=prompt("Phone");if(!phone)return;
+let landmark=prompt("Landmark")||"";
+data.clients.push({id:crypto.randomUUID(),name,phone,landmark});save();toast("Client added");render();
+}
+function newOrder(){
+if(!data.clients.length){toast("Add a client first");view="clients";return render()}
+let opts=data.clients.map((c,i)=>`${i+1}. ${c.name} — ${c.phone}`).join("\n");
+let n=Number(prompt("Choose client:\n"+opts));
+let c=data.clients[n-1];if(!c)return;
+let service=prompt("Service: wash_fold / wash_iron / iron_only","wash_fold")||"wash_fold";
+let price=Number(prompt("Price per kg (KES)","120"));if(!price)return;
+let id=crypto.randomUUID(),num=data.orders.length+1;
+data.orders.unshift({id,code:"L"+String(num).padStart(4,"0"),clientId:c.id,service,unitPrice:price,kg:0,total:0,paid:0,balance:0,status:"pickup_requested",created:new Date().toISOString()});
+save();toast("Pickup created");view="today";tab="pickups";render();
+}
+function settings(){
+document.getElementById("app").innerHTML=`
+<div class="card"><h3 style="margin-top:0">Laundry OS</h3>
+<p class="muted">A simple operator app. Data stays in this browser.</p>
+<button class="dark" onclick="exportData()">Export data</button>
+<button class="dark" onclick="importData()">Import data</button>
+<button class="dark" onclick="if(confirm('Delete all local data?')){localStorage.removeItem(KEY);location.reload()}">Reset</button>
+</div>
+<div class="card"><b>Current records</b><div class="muted">${data.clients.length} clients · ${data.orders.length} orders</div></div>`;
+}
+function exportData(){
+let blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");
+a.href=URL.createObjectURL(blob);a.download="laundry-data.json";a.click();URL.revokeObjectURL(a.href);
+}
+function importData(){
+let i=document.createElement("input");i.type="file";i.accept=".json";i.onchange=e=>{
+let r=new FileReader();r.onload=()=>{try{data=JSON.parse(r.result);save();render();toast("Imported")}catch{toast("Invalid file")}};r.readAsText(e.target.files[0])
+};i.click();
+}
+render();
+</script>
+</body>
+</html>
